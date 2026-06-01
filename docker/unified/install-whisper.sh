@@ -41,6 +41,12 @@ elif [ "$BACKEND" = "vulkan" ]; then
         -DGGML_CUDA=OFF
         -DGGML_VULKAN=ON
     )
+elif [ "$BACKEND" = "sycl" ]; then
+    # whisper.cpp has no SYCL backend; build CPU-only
+    CMAKE_FLAGS+=(
+        -DGGML_CUDA=OFF
+        -DGGML_VULKAN=OFF
+    )
 fi
 
 TARGETS=(whisper-cli whisper-server)

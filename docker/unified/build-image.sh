@@ -27,34 +27,40 @@ for arg in "$@"; do
         --vulkan)
             BACKEND="vulkan"
             ;;
+        --sycl)
+            BACKEND="sycl"
+            ;;
         --no-cache)
             NO_CACHE=true
             ;;
         --help|-h)
-            echo "Usage: ./build-image.sh --cuda|--vulkan [--no-cache]"
+            echo "Usage: ./build-image.sh --cuda|--vulkan|--sycl [--no-cache]"
             echo ""
             echo "Options:"
             echo "  --cuda      Build CUDA image (NVIDIA GPUs)"
-            echo "  --vulkan    Build Vulkan image (AMD GPUs and compatible hardware)"
+            echo "  --vulkan    Build Vulkan image (Intel Arc / AMD GPUs via Mesa 26.2)"
+            echo "  --sycl      Build SYCL image (Intel Arc via oneAPI DPC++)"
             echo "  --no-cache  Force rebuild without using Docker cache"
             echo "  --help, -h  Show this help message"
             echo ""
             echo "Environment variables:"
-            echo "  DOCKER_IMAGE_TAG     Set custom image tag (default: llama-swap:unified-cuda or llama-swap:unified-vulkan)"
+            echo "  DOCKER_IMAGE_TAG     Set custom image tag (default: llama-swap:unified-{backend})"
             echo "  LLAMA_REF            Pin llama.cpp to a commit, tag, or branch"
             echo "  WHISPER_REF          Pin whisper.cpp to a commit, tag, or branch"
             echo "  SD_REF               Pin stable-diffusion.cpp to a commit, tag, or branch"
             echo "  IK_LLAMA_REF         Pin ik_llama.cpp to a commit, tag, or branch (CUDA only)"
+            echo "  MESA_REF             Pin Mesa to a commit, tag, or branch (Vulkan only)"
             echo "  LS_VERSION           Override llama-swap version (e.g., '170' or 'latest')"
+            echo "  INTEL_GPU_SUITE      Ubuntu suite for Intel GPU APT repo (default: noble)"
             exit 0
             ;;
     esac
 done
 
 if [[ -z "$BACKEND" ]]; then
-    echo "Error: No backend specified. Please use --cuda or --vulkan."
+    echo "Error: No backend specified. Please use --cuda, --vulkan, or --sycl."
     echo ""
-    echo "Usage: ./build-image.sh --cuda|--vulkan [--no-cache]"
+    echo "Usage: ./build-image.sh --cuda|--vulkan|--sycl [--no-cache]"
     exit 1
 fi
 
@@ -170,7 +176,7 @@ if [[ "$BACKEND" == "cuda" ]]; then
     fi
 else
     IK_LLAMA_HASH="n/a"
-    echo "ik_llama.cpp: skipped (vulkan build)"
+    echo "ik_llama.cpp: skipped (${BACKEND} build)"
 fi
 
 # Resolve llama-swap ref
@@ -202,6 +208,7 @@ BUILD_ARGS=(
     --build-arg "IK_LLAMA_COMMIT_HASH=${IK_LLAMA_HASH}"
     --build-arg "LS_VERSION=${LS_HASH}"
     --build-arg "MESA_COMMIT_HASH=${MESA_REF:-main}"
+    --build-arg "INTEL_GPU_SUITE=${INTEL_GPU_SUITE:-noble}"
     -t "${DOCKER_IMAGE_TAG}"
     -f "${SCRIPT_DIR}/Dockerfile"
 )
@@ -292,12 +299,14 @@ if [[ "$BACKEND" == "cuda" ]]; then
 fi
 echo "  llama-swap:           $(docker run --rm --entrypoint cat "${DOCKER_IMAGE_TAG}" /versions.txt | grep llama-swap | cut -d' ' -f2-)"
 echo ""
-if [[ "$BACKEND" == "vulkan" ]]; then
+if [[ "$BACKEND" == "vulkan" ]] || [[ "$BACKEND" == "sycl" ]]; then
     echo "Run with:"
     echo "  docker run -it --rm --device /dev/dri:/dev/dri ${DOCKER_IMAGE_TAG}"
     echo ""
-    echo "Note: For AMD GPUs, you may also need:"
-    echo "  docker run -it --rm --device /dev/dri:/dev/dri --group-add video ${DOCKER_IMAGE_TAG}"
+    if [[ "$BACKEND" == "vulkan" ]]; then
+        echo "Note: For AMD GPUs, you may also need:"
+        echo "  docker run -it --rm --device /dev/dri:/dev/dri --group-add video ${DOCKER_IMAGE_TAG}"
+    fi
 else
     echo "Run with:"
     echo "  docker run -it --rm --gpus all ${DOCKER_IMAGE_TAG}"

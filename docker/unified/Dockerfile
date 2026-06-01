@@ -1,9 +1,10 @@
 # Unified multi-stage Dockerfile for AI inference tools
-# Supports CUDA and Vulkan backends via BACKEND build arg
+# Supports CUDA, Vulkan, and SYCL backends via BACKEND build arg
 #
 # Usage:
 #   docker buildx build --build-arg BACKEND=cuda -t llama-swap:unified-cuda .
 #   docker buildx build --build-arg BACKEND=vulkan -t llama-swap:unified-vulkan .
+#   docker buildx build --build-arg BACKEND=sycl -t llama-swap:unified-sycl .
 #   docker buildx build --build-arg BACKEND=cuda --build-arg CMAKE_CUDA_ARCHITECTURES="86;89" -t llama-swap:unified-cuda .
 #
 # Each project has its own install script that handles cloning, building,
@@ -47,7 +48,40 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 
-# ── Build Mesa Intel Vulkan ICD (VK_NV_cooperative_matrix2, Ubuntu 26.04 only) ─
+# ──
+
+FROM ubuntu:26.04 AS builder-base-sycl
+
+# INTEL_GPU_SUITE: Ubuntu suite for Intel GPU APT repo.
+# Intel publishes packages for LTS releases; update this when Intel ships 26.04 packages.
+# noble (24.04) packages are ABI-compatible with 26.04.
+ARG INTEL_GPU_SUITE=noble
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CCACHE_DIR=/ccache
+ENV CCACHE_MAXSIZE=2G
+ENV PATH="/usr/lib/ccache:${PATH}"
+
+# Intel oneAPI APT repo (suite 'all' is distro-version-agnostic)
+# Intel GPU APT repo for Level Zero dev headers
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates wget gnupg2 \
+    && wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+       | gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+       > /etc/apt/sources.list.d/oneAPI.list \
+    && wget -O- https://repositories.intel.com/gpu/intel-graphics.key \
+       | gpg --dearmor -o /usr/share/keyrings/intel-graphics.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-graphics.gpg] https://repositories.intel.com/gpu/ubuntu ${INTEL_GPU_SUITE} client" \
+       > /etc/apt/sources.list.d/intel-gpu.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake git python3 python3-pip libssl-dev \
+    curl ccache make \
+    intel-oneapi-compiler-dpcpp-cpp \
+    intel-level-zero-gpu level-zero level-zero-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
 
 FROM ubuntu:26.04 AS mesa-build
 
@@ -106,13 +140,17 @@ RUN --mount=type=cache,id=ccache-${BACKEND},target=/ccache \
 
 # ── Build ik_llama.cpp (CUDA only) ────────────────────────────────────
 #
-# Two named stages allow ARG BACKEND to select at build time:
+# Three named stages allow ARG BACKEND to select at build time:
 #   - ik-llama-cuda  : real build (from builder-base-cuda)
 #   - ik-llama-vulkan: no-op (empty /install/bin, skips CUDA pull entirely)
-# BuildKit only evaluates the selected branch, so vulkan builds never
+#   - ik-llama-sycl  : no-op (not supported for SYCL)
+# BuildKit only evaluates the selected branch, so vulkan/sycl builds never
 # pull nvidia/cuda:*-devel or compile ik_llama.cpp.
 
 FROM builder-base-vulkan AS ik-llama-vulkan
+RUN mkdir -p /install/bin
+
+FROM builder-base-sycl AS ik-llama-sycl
 RUN mkdir -p /install/bin
 
 FROM builder-base-cuda AS ik-llama-cuda
@@ -167,6 +205,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN mkdir -p /usr/share/vulkan/icd.d
 COPY --from=mesa-build /install/usr/lib/x86_64-linux-gnu/libvulkan_intel.so /usr/lib/x86_64-linux-gnu/libvulkan_intel.so
 COPY --from=mesa-build /install/usr/share/vulkan/icd.d/intel_icd.x86_64.json /usr/share/vulkan/icd.d/intel_icd.x86_64.json
+
+# ──
+
+FROM ubuntu:26.04 AS runtime-sycl
+
+# INTEL_GPU_SUITE: see builder-base-sycl note above.
+ARG INTEL_GPU_SUITE=noble
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH="/usr/local/bin:${PATH}"
+# Required for Intel GPU power/memory reporting (recommended for Arc GPUs)
+ENV ZES_ENABLE_SYSMAN=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates wget gnupg2 \
+    && wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+       | gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+       > /etc/apt/sources.list.d/oneAPI.list \
+    && wget -O- https://repositories.intel.com/gpu/intel-graphics.key \
+       | gpg --dearmor -o /usr/share/keyrings/intel-graphics.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-graphics.gpg] https://repositories.intel.com/gpu/ubuntu ${INTEL_GPU_SUITE} client" \
+       > /etc/apt/sources.list.d/intel-gpu.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 python3 curl ca-certificates \
+    intel-oneapi-runtime-dpcpp-cpp \
+    intel-opencl-icd intel-level-zero-gpu level-zero \
+    && rm -rf /var/lib/apt/lists/*
 
 # ── Select runtime base by BACKEND ────────────────────────────────────
 

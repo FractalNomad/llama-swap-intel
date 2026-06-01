@@ -42,6 +42,18 @@ elif [ "$BACKEND" = "vulkan" ]; then
         -DGGML_CUDA=OFF
         -DGGML_VULKAN=ON
     )
+elif [ "$BACKEND" = "sycl" ]; then
+    # Source Intel oneAPI environment (sets PATH, CPATH, LD_LIBRARY_PATH etc. for icpx)
+    # shellcheck disable=SC1091
+    source /opt/intel/oneapi/setvars.sh --force
+    CMAKE_FLAGS+=(
+        -DGGML_CUDA=OFF
+        -DGGML_VULKAN=OFF
+        -DGGML_SYCL=ON
+        -DGGML_SYCL_F16=ON
+        -DCMAKE_C_COMPILER=icx
+        -DCMAKE_CXX_COMPILER=icpx
+    )
 fi
 
 TARGETS=(llama-cli llama-server)

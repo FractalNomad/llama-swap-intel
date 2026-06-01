@@ -45,6 +45,12 @@ elif [ "$BACKEND" = "vulkan" ]; then
         -DGGML_VULKAN=ON
         -DSD_VULKAN=ON
     )
+elif [ "$BACKEND" = "sycl" ]; then
+    # stable-diffusion.cpp has no SYCL backend; build CPU-only
+    CMAKE_FLAGS+=(
+        -DGGML_CUDA=OFF
+        -DGGML_VULKAN=OFF
+    )
 fi
 
 TARGETS=(stable-diffusion sd-cli sd-server)

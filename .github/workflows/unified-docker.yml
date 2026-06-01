@@ -37,6 +37,15 @@ on:
         type: boolean
         required: false
         default: true
+      build_sycl:
+        description: "Build SYCL image (Intel oneAPI DPC++)"
+        type: boolean
+        required: false
+        default: true
+      intel_gpu_suite:
+        description: "Ubuntu suite for Intel GPU APT repo (default: noble; update when Intel ships 26.04 packages)"
+        required: false
+        default: "noble"
       push_to_ghcr:
         description: "Push images to ghcr.io"
         type: boolean
@@ -61,6 +70,9 @@ jobs:
           fi
           if [[ "${{ inputs.build_vulkan }}" != "false" ]]; then
             backends+=("vulkan")
+          fi
+          if [[ "${{ inputs.build_sycl }}" != "false" ]]; then
+            backends+=("sycl")
           fi
           matrix=$(printf '%s\n' "${backends[@]}" | jq -R . | jq -sc .)
           echo "matrix=$matrix" >> $GITHUB_OUTPUT
@@ -112,6 +124,7 @@ jobs:
           IK_LLAMA_REF: ${{ inputs.ik_llama_ref || 'main' }}
           MESA_REF: ${{ inputs.mesa_ref || 'main' }}
           LS_VERSION: ${{ inputs.llama_swap_version || 'main' }}
+          INTEL_GPU_SUITE: ${{ inputs.intel_gpu_suite || 'noble' }}
           DOCKER_IMAGE_TAG: ghcr.io/${{ github.repository_owner }}/llama-swap:unified-${{ matrix.backend }}
           BUILDX_BUILDER: ${{ env.ACT == 'true' && 'llama-swap-builder' || '' }}
         run: |
