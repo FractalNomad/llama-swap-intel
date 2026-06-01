@@ -74,11 +74,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
        | gpg --dearmor -o /usr/share/keyrings/intel-graphics.gpg \
     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-graphics.gpg] https://repositories.intel.com/gpu/ubuntu ${INTEL_GPU_SUITE} client" \
        > /etc/apt/sources.list.d/intel-gpu.list \
+    # Pin Intel GPU repo to allow ~24.04 versioned packages on Ubuntu 26.04
+    && printf 'Package: *\nPin: origin "repositories.intel.com"\nPin-Priority: 1001\n' \
+       > /etc/apt/preferences.d/intel-gpu-pin \
     && apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake git python3 python3-pip libssl-dev \
     curl ccache make \
     intel-oneapi-compiler-dpcpp-cpp \
-    intel-level-zero-gpu level-zero level-zero-dev \
+    intel-oneapi-mkl-devel \
+    intel-level-zero-gpu libze1 libze-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -228,10 +232,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
        | gpg --dearmor -o /usr/share/keyrings/intel-graphics.gpg \
     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-graphics.gpg] https://repositories.intel.com/gpu/ubuntu ${INTEL_GPU_SUITE} client" \
        > /etc/apt/sources.list.d/intel-gpu.list \
+    # Pin Intel GPU repo to allow ~24.04 versioned packages on Ubuntu 26.04
+    && printf 'Package: *\nPin: origin "repositories.intel.com"\nPin-Priority: 1001\n' \
+       > /etc/apt/preferences.d/intel-gpu-pin \
     && apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 python3 curl ca-certificates \
     intel-oneapi-runtime-dpcpp-cpp \
-    intel-opencl-icd intel-level-zero-gpu level-zero \
+    intel-oneapi-mkl \
+    intel-opencl-icd intel-level-zero-gpu libze1 \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Select runtime base by BACKEND ────────────────────────────────────
