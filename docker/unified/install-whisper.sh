@@ -40,6 +40,10 @@ elif [ "$BACKEND" = "vulkan" ]; then
     CMAKE_FLAGS+=(
         -DGGML_CUDA=OFF
         -DGGML_VULKAN=ON
+        # Disable cooperative matrix — apt glslc can't compile CM1 shaders;
+        # llama-server handles GPU inference, whisper runs fine without CM.
+        -DGGML_VULKAN_COOPMAT=OFF
+        -DGGML_VULKAN_COOPMAT2=OFF
     )
 elif [ "$BACKEND" = "sycl" ]; then
     # whisper.cpp has no SYCL backend; build CPU-only
