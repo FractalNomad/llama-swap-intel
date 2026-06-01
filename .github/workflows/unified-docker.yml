@@ -1,9 +1,6 @@
 name: Build Unified Docker Image
 
 on:
-  schedule:
-    - cron: "37 5 * * *"
-
   workflow_dispatch:
     inputs:
       llama_cpp_ref:
@@ -22,6 +19,10 @@ on:
         description: "ik_llama.cpp commit hash, tag, or branch (CUDA only)"
         required: false
         default: "main"
+      mesa_ref:
+        description: "Mesa commit hash, tag, or branch"
+        required: false
+        default: "main"
       llama_swap_version:
         description: "llama-swap version (e.g. v198, latest, main)"
         required: false
@@ -30,7 +31,7 @@ on:
         description: "Build CUDA image"
         type: boolean
         required: false
-        default: true
+        default: false
       build_vulkan:
         description: "Build Vulkan image"
         type: boolean
@@ -55,11 +56,10 @@ jobs:
       - id: set-matrix
         run: |
           backends=()
-          # schedule uses defaults (build both); workflow_dispatch respects inputs
-          if [[ "${{ github.event_name }}" == "schedule" ]] || [[ "${{ inputs.build_cuda }}" == "true" ]]; then
+          if [[ "${{ inputs.build_cuda }}" == "true" ]]; then
             backends+=("cuda")
           fi
-          if [[ "${{ github.event_name }}" == "schedule" ]] || [[ "${{ inputs.build_vulkan }}" == "true" ]]; then
+          if [[ "${{ inputs.build_vulkan }}" != "false" ]]; then
             backends+=("vulkan")
           fi
           matrix=$(printf '%s\n' "${backends[@]}" | jq -R . | jq -sc .)
@@ -110,20 +110,18 @@ jobs:
           WHISPER_REF: ${{ inputs.whisper_ref || 'master' }}
           SD_REF: ${{ inputs.sd_ref || 'master' }}
           IK_LLAMA_REF: ${{ inputs.ik_llama_ref || 'main' }}
+          MESA_REF: ${{ inputs.mesa_ref || 'main' }}
           LS_VERSION: ${{ inputs.llama_swap_version || 'main' }}
-          DOCKER_IMAGE_TAG: ghcr.io/mostlygeek/llama-swap:unified-${{ matrix.backend }}
-          # When running under act, use the local builder that has warm ccache.
-          # On GitHub Actions, BUILDX_BUILDER is unset so docker uses the builder
-          # created by setup-buildx-action above.
+          DOCKER_IMAGE_TAG: ghcr.io/${{ github.repository_owner }}/llama-swap:unified-${{ matrix.backend }}
           BUILDX_BUILDER: ${{ env.ACT == 'true' && 'llama-swap-builder' || '' }}
         run: |
           chmod +x docker/unified/build-image.sh
           docker/unified/build-image.sh --${{ matrix.backend }}
 
       - name: Push to GitHub Container Registry
-        if: ${{ !env.ACT && (github.event_name == 'schedule' || inputs.push_to_ghcr == true) }}
+        if: ${{ !env.ACT && inputs.push_to_ghcr == true }}
         run: |
-          BASE_TAG="ghcr.io/mostlygeek/llama-swap:unified-${{ matrix.backend }}"
+          BASE_TAG="ghcr.io/${{ github.repository_owner }}/llama-swap:unified-${{ matrix.backend }}"
           DATE_TAG=$(date -u +%Y-%m-%d)
 
           docker push "${BASE_TAG}"

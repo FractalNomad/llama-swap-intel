@@ -201,6 +201,7 @@ BUILD_ARGS=(
     --build-arg "SD_COMMIT_HASH=${SD_HASH}"
     --build-arg "IK_LLAMA_COMMIT_HASH=${IK_LLAMA_HASH}"
     --build-arg "LS_VERSION=${LS_HASH}"
+    --build-arg "MESA_COMMIT_HASH=${MESA_REF:-main}"
     -t "${DOCKER_IMAGE_TAG}"
     -f "${SCRIPT_DIR}/Dockerfile"
 )
@@ -209,7 +210,7 @@ if [[ "$NO_CACHE" == true ]]; then
     BUILD_ARGS+=(--no-cache)
     echo "Note: Building without cache"
 elif [[ "${GITHUB_ACTIONS:-}" == "true" && "${ACT:-}" != "true" ]]; then
-    CACHE_REF="ghcr.io/mostlygeek/llama-swap:unified-${BACKEND}-cache"
+    CACHE_REF="${DOCKER_IMAGE_TAG}-cache"
     BUILD_ARGS+=(
         --cache-from "type=registry,ref=${CACHE_REF}"
         --cache-to "type=registry,ref=${CACHE_REF},mode=max"
