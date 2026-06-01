@@ -31,7 +31,7 @@ WORKDIR /build
 
 # ──
 
-FROM ubuntu:24.04 AS builder-base-vulkan
+FROM ubuntu:26.04 AS builder-base-vulkan
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CCACHE_DIR=/ccache
@@ -46,6 +46,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
+
+# ── Build Mesa Intel Vulkan ICD (VK_NV_cooperative_matrix2, Ubuntu 26.04 only) ─
+
+FROM ubuntu:26.04 AS mesa-build
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git build-essential meson ninja-build pkg-config \
+    python3 python3-mako python-is-python3 \
+    glslang-tools glslc spirv-tools spirv-tools-dev spirv-headers \
+    libdrm-dev llvm-dev clang libclang-dev \
+    libclc-21-dev libllvmspirvlib-21-dev \
+    libxcb1-dev libxcb-randr0-dev libx11-xcb-dev libxcb-dri3-dev \
+    libxcb-present-dev libxcb-shm0-dev libxshmfence-dev libxrandr-dev \
+    libwayland-dev wayland-protocols \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG MESA_COMMIT_HASH=main
+WORKDIR /build
+COPY install-mesa.sh /build/
+RUN --mount=type=cache,id=mesa-src,target=/src/mesa \
+    bash /build/install-mesa.sh "${MESA_COMMIT_HASH}"
 
 # ── Select builder base by BACKEND ────────────────────────────────────
 
@@ -127,15 +150,23 @@ COPY --from=builder-base-cuda /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/
 
 # ──
 
-FROM ubuntu:24.04 AS runtime-vulkan
+FROM ubuntu:26.04 AS runtime-vulkan
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/usr/local/bin:${PATH}"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgomp1 libvulkan1 mesa-vulkan-drivers \
+    libgomp1 libvulkan1 \
+    libdrm2 libdrm-intel1 \
+    libx11-xcb1 libxcb-dri3-0 libxcb-present0 libxcb-shm0 libxshmfence1 \
+    libzstd1 \
     python3 curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Mesa 26.2 Intel Vulkan ICD (adds VK_NV_cooperative_matrix2 support)
+RUN mkdir -p /usr/share/vulkan/icd.d
+COPY --from=mesa-build /install/usr/lib/x86_64-linux-gnu/libvulkan_intel.so /usr/lib/x86_64-linux-gnu/libvulkan_intel.so
+COPY --from=mesa-build /install/usr/share/vulkan/icd.d/intel_icd.x86_64.json /usr/share/vulkan/icd.d/intel_icd.x86_64.json
 
 # ── Select runtime base by BACKEND ────────────────────────────────────
 
@@ -146,6 +177,7 @@ ARG LLAMA_COMMIT_HASH=unknown
 ARG WHISPER_COMMIT_HASH=unknown
 ARG SD_COMMIT_HASH=unknown
 ARG IK_LLAMA_COMMIT_HASH=unknown
+ARG MESA_COMMIT_HASH=N/A
 ARG RUN_UID=0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -196,6 +228,7 @@ RUN echo "llama.cpp: ${LLAMA_COMMIT_HASH}" > /versions.txt && \
     echo "whisper.cpp: ${WHISPER_COMMIT_HASH}" >> /versions.txt && \
     echo "stable-diffusion.cpp: ${SD_COMMIT_HASH}" >> /versions.txt && \
     echo "ik_llama.cpp: ${IK_LLAMA_COMMIT_HASH}" >> /versions.txt && \
+    echo "mesa: ${MESA_COMMIT_HASH}" >> /versions.txt && \
     echo "llama-swap: $(cat /tmp/llama-swap-version)" >> /versions.txt && \
     echo "backend: ${BACKEND}" >> /versions.txt && \
     echo "build_timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /versions.txt
