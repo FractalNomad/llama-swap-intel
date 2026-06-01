@@ -201,6 +201,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 libvulkan1 \
     libdrm2 libdrm-intel1 \
     libx11-xcb1 libxcb-dri3-0 libxcb-present0 libxcb-shm0 libxshmfence1 \
+    libxcb-xfixes0 libxcb-sync1 libxcb-randr0 libwayland-client0 \
     libzstd1 \
     python3 curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
