@@ -54,7 +54,7 @@ FROM ubuntu:26.04 AS mesa-build
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git build-essential meson ninja-build pkg-config \
+    git build-essential meson ninja-build pkg-config ca-certificates \
     python3 python3-mako python-is-python3 \
     glslang-tools glslc spirv-tools spirv-tools-dev spirv-headers \
     libdrm-dev llvm-dev clang libclang-dev \
