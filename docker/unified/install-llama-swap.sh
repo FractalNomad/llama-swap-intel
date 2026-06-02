@@ -47,10 +47,18 @@ case "$ARCH" in
     *) echo "FATAL: Unsupported architecture: $ARCH" >&2; exit 1 ;;
 esac
 
-# Download and extract
+# Download and extract — try b prefix first, fall back to v for old releases
 URL="https://github.com/${REPO}/releases/download/b${VERSION}/llama-swap_${VERSION}_linux_${ARCH}.tar.gz"
 echo "=== Downloading llama-swap v${VERSION} ==="
 echo "URL: $URL"
+
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -fSL "$URL" 2>/dev/null || echo "000")
+if [ "$HTTP_CODE" = "000" ] || [ "$HTTP_CODE" = "404" ]; then
+    echo "b release not found, falling back to v prefix"
+    URL="https://github.com/${REPO}/releases/download/v${VERSION}/llama-swap_${VERSION}_linux_${ARCH}.tar.gz"
+    echo "URL: $URL"
+fi
+
 curl -fSL -o /tmp/llama-swap.tar.gz "$URL"
 tar -xzf /tmp/llama-swap.tar.gz -C /install/bin/
 rm /tmp/llama-swap.tar.gz
