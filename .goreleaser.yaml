@@ -18,7 +18,7 @@ archives:
   - id: default
     formats:
       - tar.gz
-    name_template: "{{ .ProjectName }}_{{ trimPrefix \"b\" .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "{{ .ProjectName }}_{{ replace .Version \"b\" \"\" }}_{{ .Os }}_{{ .Arch }}"
     builds_info:
       group: root
       owner: root
