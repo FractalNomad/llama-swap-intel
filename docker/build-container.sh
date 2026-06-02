@@ -48,8 +48,8 @@ SD_IMAGE=${BASE_SDCPP_IMAGE:-ghcr.io/leejet/stable-diffusion.cpp}
 
 # LS_REPO is the destination of the built container image — defaults to the
 # current GitHub repository so forked CI builds publish to the fork's own
-# ghcr.io namespace without code changes.
-LS_REPO=${GITHUB_REPOSITORY:-mostlygeek/llama-swap}
+# ghcr.io namespace without code changes. Lowercase for Docker/OCI compliance.
+LS_REPO=$(echo "${GITHUB_REPOSITORY:-mostlygeek/llama-swap}" | tr '[:upper:]' '[:lower:]')
 
 # LS_BINARY_REPO is where the llama-swap release tarball is downloaded
 # from. Decoupled from LS_REPO so forks (which usually have no releases of
@@ -127,6 +127,7 @@ if [ "$ARCH" == "cpu" ]; then
 elif [ "$ARCH" == "sycl" ]; then
     # sycl has no pre-built image; we build it from source
     BASE_TAG=sycl
+    LCPP_TAG="local"
 else
     LCPP_TAG=$(fetch_llama_tag "server-${ARCH}")
     BASE_TAG=server-${ARCH}-${LCPP_TAG}
