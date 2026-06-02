@@ -27,7 +27,7 @@ RUN git clone --depth 1 --branch ${LLAMA_CPP_REF} https://github.com/ggml-org/ll
 
 # Build llama.cpp with SYCL
 WORKDIR /app/llama.cpp
-RUN source /opt/intel/oneapi/setvars.sh && \
+RUN . /opt/intel/oneapi/setvars.sh && \
     cmake -B build \
         -DGGML_SYCL=ON \
         -DCMAKE_C_COMPILER=icx \
