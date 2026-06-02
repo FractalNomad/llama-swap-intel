@@ -27,7 +27,7 @@ ARCH=$1
 PUSH_IMAGES=${2:-false}
 
 # List of allowed architectures
-ALLOWED_ARCHS=("intel" "vulkan" "musa" "cuda" "cuda13" "cpu" "rocm")
+ALLOWED_ARCHS=("vulkan" "sycl")
 
 # Check if ARCH is in the allowed list
 if [[ ! " ${ALLOWED_ARCHS[@]} " =~ " ${ARCH} " ]]; then
@@ -124,6 +124,9 @@ fetch_llama_tag() {
 if [ "$ARCH" == "cpu" ]; then
     LCPP_TAG=$(fetch_llama_tag "server")
     BASE_TAG=server-${LCPP_TAG}
+elif [ "$ARCH" == "sycl" ]; then
+    # sycl has no pre-built image; we build it from source
+    BASE_TAG=sycl
 else
     LCPP_TAG=$(fetch_llama_tag "server-${ARCH}")
     BASE_TAG=server-${ARCH}-${LCPP_TAG}
@@ -179,7 +182,22 @@ for CONTAINER_TYPE in non-root root; do
   fi
 
   log_info "Building $CONTAINER_TYPE $CONTAINER_TAG $LS_VER"
-  if [ "$ARCH" == "cpu" ]; then
+  if [ "$ARCH" == "sycl" ]; then
+    # sycl: build llama.cpp from source first, then layer llama-swap on top
+    docker build --provenance=false -f llama.cpp-sycl.Dockerfile \
+      --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+      --build-arg APP_VERSION=${LS_VER} --build-arg APP_REVISION=$(git rev-parse HEAD 2>/dev/null || echo "unknown") \
+      --build-arg LLAMA_CPP_REF=${LLAMA_CPP_REF:-master} \
+      -t ${CONTAINER_TAG}-llama-cpp .
+
+    docker build --provenance=false \
+      --build-arg BASE_TAG=${BASE_TAG} --build-arg LS_VER=${LS_VER} --build-arg UID=${USER_UID} \
+      --build-arg LS_REPO=${LS_BINARY_REPO} --build-arg GID=${USER_GID} --build-arg USER_HOME=${USER_HOME} \
+      -f llama-swap.Containerfile \
+      --build-arg BASE_IMAGE=ghcr.io/${LS_REPO} \
+      -t ${CONTAINER_TAG} -t ${CONTAINER_LATEST} \
+      --build-arg BASE_TAG=${CONTAINER_TAG}-llama-cpp .
+  elif [ "$ARCH" == "cpu" ]; then
     docker buildx build $BUILDX_FLAGS --provenance=false \
       -f llama-swap.Containerfile \
       --build-arg BASE_TAG=${BASE_TAG} --build-arg LS_VER=${LS_VER} --build-arg UID=${USER_UID} \
@@ -197,7 +215,7 @@ for CONTAINER_TYPE in non-root root; do
   # For architectures with stable-diffusion.cpp support, layer sd-server on top.
   # Stays on `docker build` so the base resolves from local dockerd.
   case "$ARCH" in
-    "musa" | "vulkan")
+    "vulkan")
       log_info "Adding sd-server to $CONTAINER_TAG"
       docker build --provenance=false -f llama-swap-sd.Containerfile \
         --build-arg BASE=${CONTAINER_TAG} \
