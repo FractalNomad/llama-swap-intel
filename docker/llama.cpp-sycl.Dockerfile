@@ -55,12 +55,11 @@ COPY --from=build /opt/intel /opt/intel
 
 # Copy built binaries
 COPY --from=build /app/llama.cpp/build/bin /app/bin
-COPY --from=build /app/llama.cpp/build/lib /app/lib
 COPY --from=build /app/llama.cpp/*.py /app/
 COPY --from=build /app/llama.cpp/conversion /app/
 COPY --from=build /app/llama.cpp/gguf-py /app/
 
 ENV PATH="/app/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/app/lib:${LD_LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="/opt/intel/oneapi:/opt/intel/oneapi/compiler/latest/linux/lib:/opt/intel/oneapi/mkl/latest/lib:/opt/intel/oneapi/tbb/latest/lib:/opt/intel/oneapi/mpi/latest/lib"
 
 ENTRYPOINT ["/app/bin/llama-server"]
