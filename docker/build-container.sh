@@ -56,7 +56,7 @@ LS_REPO=${GITHUB_REPOSITORY:-mostlygeek/llama-swap}
 # their own) can still build a container by pulling the canonical binary
 # from upstream. Override via the LS_BINARY_REPO env var when you maintain
 # fork-side releases.
-LS_BINARY_REPO=${LS_BINARY_REPO:-mostlygeek/llama-swap}
+LS_BINARY_REPO=${LS_BINARY_REPO:-FractalNomad/llama-swap-intel}
 
 # the most recent llama-swap tag
 # have to strip out the 'b' due to .tar.gz file naming.
