@@ -37,7 +37,7 @@ WORKDIR /app
 ENV PATH="/app:${PATH}"
 
 RUN \
-    curl -LO "https://github.com/${LS_REPO}/releases/download/v${LS_VER}/llama-swap_${LS_VER}_linux_${TARGETARCH}.tar.gz" && \
+    curl -LO "https://github.com/${LS_REPO}/releases/download/b${LS_VER}/llama-swap_${LS_VER}_linux_${TARGETARCH}.tar.gz" && \
     tar -zxf "llama-swap_${LS_VER}_linux_${TARGETARCH}.tar.gz" && \
     rm "llama-swap_${LS_VER}_linux_${TARGETARCH}.tar.gz"
 

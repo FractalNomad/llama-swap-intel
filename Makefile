@@ -86,9 +86,9 @@ release:
 		exit 1; \
 	fi
 
-# Get the highest tag in v{number} format, increment it, and create a new tag
-	@highest_tag=$$(git tag --sort=-v:refname | grep -E '^v[0-9]+$$' | head -n 1 || echo "v0"); \
-	new_tag="v$$(( $${highest_tag#v} + 1 ))"; \
+# Get the highest tag in b{number} format, increment it, and create a new tag
+	@highest_tag=$$(git tag --sort=-v:refname | grep -E '^b[0-9]+$$' | head -n 1 || echo "b0"); \
+	new_tag="b$$(( $${highest_tag#b} + 1 ))"; \
 	echo "tagging new version: $$new_tag"; \
 	git tag "$$new_tag";
 

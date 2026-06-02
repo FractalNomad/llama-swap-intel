@@ -41,7 +41,12 @@ func main() {
 	flag.Parse() // Parse the command-line flags
 
 	if *showVersion {
-		fmt.Printf("version: %s (%s), built at %s", version, commit, date)
+		// Strip the 'b' prefix from the version for display (e.g. b170 -> 170)
+		displayVersion := version
+		if strings.HasPrefix(displayVersion, "b") {
+			displayVersion = strings.TrimLeft(displayVersion, "b")
+		}
+		fmt.Printf("version: %s (%s), built at %s", displayVersion, commit, date)
 		os.Exit(0)
 	}
 

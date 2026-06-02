@@ -138,7 +138,7 @@ docker pull ghcr.io/mostlygeek/llama-swap:intel
 docker pull ghcr.io/mostlygeek/llama-swap:musa
 
 # tagged llama-swap, platform and llama-server version images
-docker pull ghcr.io/mostlygeek/llama-swap:v166-cuda-b6795
+docker pull ghcr.io/mostlygeek/llama-swap:b166-cuda-b6795
 
 # non-root cuda
 docker pull ghcr.io/mostlygeek/llama-swap:cuda-non-root

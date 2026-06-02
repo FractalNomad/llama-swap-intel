@@ -16,21 +16,21 @@ if echo "${VERSION}" | grep -qE '^[0-9a-f]{40}$'; then
         | grep "^${VERSION}" | sed 's|.*refs/tags/||' | grep -v '\^{}' | head -1)
     if [ -n "${TAG}" ]; then
         echo "Resolved to tag: ${TAG}"
-        VERSION="${TAG#v}"
+        VERSION="${TAG#b}"
     else
         echo "No release tag found for commit ${VERSION:0:7}, using latest"
         VERSION="latest"
     fi
 fi
 
-# Strip leading 'v' prefix so both "198" and "v198" work
-VERSION="${VERSION#v}"
+# Strip leading 'b' prefix so both "198" and "b198" work
+VERSION="${VERSION#b}"
 
 # Resolve "latest" to actual version number
 if [ "$VERSION" = "latest" ]; then
     echo "=== Resolving latest llama-swap release ==="
     VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-        | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
+        | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^b//')
     if [ -z "$VERSION" ]; then
         echo "FATAL: Could not determine latest release version" >&2
         exit 1
@@ -47,7 +47,7 @@ case "$ARCH" in
 esac
 
 # Download and extract
-URL="https://github.com/${REPO}/releases/download/v${VERSION}/llama-swap_${VERSION}_linux_${ARCH}.tar.gz"
+URL="https://github.com/${REPO}/releases/download/b${VERSION}/llama-swap_${VERSION}_linux_${ARCH}.tar.gz"
 echo "=== Downloading llama-swap v${VERSION} ==="
 echo "URL: $URL"
 curl -fSL -o /tmp/llama-swap.tar.gz "$URL"

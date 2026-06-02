@@ -24,7 +24,7 @@ on:
         required: false
         default: "main"
       llama_swap_version:
-        description: "llama-swap version (e.g. v198, latest, main)"
+        description: "llama-swap version (e.g. b198, latest, main)"
         required: false
         default: "main"
       build_cuda:
