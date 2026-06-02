@@ -144,7 +144,9 @@ for CONTAINER_TYPE in non-root root; do
 
   if [ "$ARCH" == "sycl" ]; then
     # sycl: build everything from source in a single Dockerfile
-    docker build --provenance=false -f llama.cpp-sycl.Dockerfile \
+    # Use buildx with parent dir as context so Go source is available
+    docker buildx build --provenance=false \
+      --build-context llama-swap=.. \
       --build-arg BUILD_DATE=${BUILD_DATE} \
       --build-arg APP_VERSION=${GIT_HASH:0:8} \
       --build-arg APP_REVISION=${GIT_HASH} \
@@ -154,11 +156,13 @@ for CONTAINER_TYPE in non-root root; do
       --build-arg USER_HOME=${USER_HOME} \
       --build-arg GIT_HASH=${GIT_HASH} \
       --build-arg BUILD_DATE_ARG=${BUILD_DATE} \
+      -f llama.cpp-sycl.Dockerfile \
       -t ${CONTAINER_TAG} -t ${CONTAINER_LATEST} \
-      --context .. .
+      --load .
   else
     # vulkan: use pre-built llama.cpp image, build llama-swap from source
-    docker build --provenance=false -f llama-swap.Containerfile \
+    docker buildx build --provenance=false \
+      --build-context llama-swap=.. \
       --build-arg BASE_IMAGE=${BASE_IMAGE} \
       --build-arg BASE_TAG=${BASE_TAG} \
       --build-arg UID=${USER_UID} \
@@ -166,8 +170,9 @@ for CONTAINER_TYPE in non-root root; do
       --build-arg USER_HOME=${USER_HOME} \
       --build-arg GIT_HASH=${GIT_HASH} \
       --build-arg BUILD_DATE=${BUILD_DATE} \
+      -f llama-swap.Containerfile \
       -t ${CONTAINER_TAG} -t ${CONTAINER_LATEST} \
-      --context .. .
+      --load .
   fi
 
   if [ "$PUSH_IMAGES" == "true" ]; then

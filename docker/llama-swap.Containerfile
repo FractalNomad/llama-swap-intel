@@ -3,14 +3,14 @@ ARG BASE_TAG=server-cuda
 FROM ${BASE_IMAGE}:${BASE_TAG}
 
 # Build llama-swap from source
-FROM golang:1.24-bookworm AS build
+FROM golang:1.26-bookworm AS build
 ARG TARGETARCH=amd64
 ARG GIT_HASH=unknown
 ARG BUILD_DATE=unknown
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-COPY . .
+COPY --from=llama-swap . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
     -ldflags="-X main.commit=${GIT_HASH} -X main.version=${GIT_HASH} -X main.date=${BUILD_DATE}" \
     -o /out/llama-swap

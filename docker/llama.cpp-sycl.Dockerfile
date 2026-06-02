@@ -36,13 +36,13 @@ RUN . /opt/intel/oneapi/setvars.sh && \
     cmake --build build --config Release -j$(nproc)
 
 # Build llama-swap from source
-FROM golang:1.24-bookworm AS ls-build
+FROM golang:1.26-bookworm AS ls-build
 ARG GIT_HASH=unknown
 ARG BUILD_DATE=unknown
 WORKDIR /src
-COPY go.mod go.sum ./
+COPY --from=llama-swap go.mod go.sum ./
 RUN go mod download
-COPY . .
+COPY --from=llama-swap . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="-X main.commit=${GIT_HASH} -X main.version=${GIT_HASH} -X main.date=${BUILD_DATE}" \
     -o /out/llama-swap
@@ -58,25 +58,44 @@ LABEL org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.version="${APP_VERSION}" \
       org.opencontainers.image.revision="${APP_REVISION}"
 
-# Install oneAPI runtime
+# Install oneAPI runtime and user management tools
 RUN apt update && apt install -y libssl-dev curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy oneAPI runtime from build stage
 COPY --from=build /opt/intel /opt/intel
 
-# Copy built binaries
-COPY --from=build /app/llama.cpp/build/bin /app/bin
-COPY --from=build /app/llama.cpp/*.py /app/
-COPY --from=build /app/llama.cpp/conversion /app/
-COPY --from=build /app/llama.cpp/gguf-py /app/
+# Set up oneAPI environment
+ENV PATH="/opt/intel/oneapi/setvars.sh:${PATH}"
 
-# Copy llama-swap binary
-COPY --from=ls-build /out/llama-swap /app/bin/llama-swap
+# Set up user
+ARG UID=10001
+ARG GID=10001
+ARG USER_HOME=/app
+ENV HOME=$USER_HOME
+RUN if [ $UID -ne 0 ]; then \
+      groupadd --system --gid $GID app && \
+      useradd --system --uid $UID --gid $GID --home $USER_HOME app; \
+    fi
+RUN mkdir --parents $HOME /app
+RUN chown --recursive $UID:$GID $HOME /app
+USER $UID:$GID
+WORKDIR /app
 
-ENV PATH="/app/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/opt/intel/oneapi:/opt/intel/oneapi/compiler/latest/linux/lib:/opt/intel/oneapi/mkl/latest/lib:/opt/intel/oneapi/tbb/latest/lib:/opt/intel/oneapi/mpi/latest/lib"
+# Copy llama.cpp SYCL binaries
+COPY --from=build /app/llama.cpp/build/bin/llama-server /app/llama-server
+COPY --from=build /app/llama.cpp/build/bin/llama-cli /app/llama-cli
+COPY --from=build /app/llama.cpp/build/bin/llama-quantize /app/llama-quantize
+COPY --from=build /app/llama.cpp/build/bin/llama-bench /app/llama-bench
 
+# Copy llama-swap
+COPY --from=ls-build /out/llama-swap /app/llama-swap
+
+# Add to PATH
+ENV PATH="/app:${PATH}"
+
+# Copy config
 COPY config.example.yaml /app/config.yaml
 
-ENTRYPOINT ["/app/bin/llama-swap", "-config", "/app/config.yaml"]
+HEALTHCHECK CMD curl -f http://localhost:8080/ || exit 1
+ENTRYPOINT ["/app/llama-swap", "-config", "/app/config.yaml"]
