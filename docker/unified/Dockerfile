@@ -240,8 +240,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 python3 curl ca-certificates \
     intel-oneapi-runtime-dpcpp-cpp \
     intel-oneapi-mkl \
-    intel-opencl-icd intel-level-zero-gpu libze1 \
-    && rm -rf /var/lib/apt/lists/*
+    intel-opencl-icd libze1 \
+    # Upgrade Level Zero GPU to Ubuntu universe (26.05+) for Xe2/BMG (Arc B-series) support.
+    # Intel GPU repo ships 24.39 which lacks Xe2 device IDs; Ubuntu 26.04 universe has 26.05.
+    # libze-intel-gpu1 replaces intel-level-zero-gpu (same files, different package name).
+    && rm /etc/apt/preferences.d/intel-gpu-pin \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends libze-intel-gpu1 intel-opencl-icd libze1 \
+    && rm -rf /var/lib/apt/lists/* \
+    # Register Intel Unified Memory Framework (UMF) with ldconfig.
+    # libumf.so.1 is required by the SYCL Level Zero UR adapter but is not in the default
+    # library search path. Without it the adapter loads 0 devices despite zeInit succeeding.
+    && find /opt/intel/oneapi/umf -maxdepth 3 -name "libumf.so.1" -exec dirname {} \; \
+       | head -1 > /etc/ld.so.conf.d/intel-oneapi-umf.conf \
+    && ldconfig
 
 # ── Select runtime base by BACKEND ────────────────────────────────────
 
