@@ -23,8 +23,9 @@ if echo "${VERSION}" | grep -qE '^[0-9a-f]{40}$'; then
     fi
 fi
 
-# Strip leading 'b' prefix so both "198" and "b198" work
+# Strip leading 'b' or 'v' prefix so both "198", "b198", and "v198" work
 VERSION="${VERSION#b}"
+VERSION="${VERSION#v}"
 
 # Resolve "latest" to actual version number
 if [ "$VERSION" = "latest" ]; then
