@@ -60,12 +60,18 @@ LS_BINARY_REPO=${LS_BINARY_REPO:-FractalNomad/llama-swap-intel}
 
 # the most recent llama-swap tag
 # have to strip out the 'b' due to .tar.gz file naming.
+# Prefer the current git tag (set by the release workflow), falling back to
+# the latest GitHub release so local runs still work.
 # Authenticated request — unauth'd github.com API is 60/hr per IP and GHA
 # runners share IPs, so the call regularly returns rate-limit JSON and
 # `.tag_name` then resolves to "null", producing a bogus `bnull` URL below.
-LS_VER=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-    "https://api.github.com/repos/${LS_BINARY_REPO}/releases/latest" \
-    | jq -r .tag_name | sed 's/^[bv]//')
+if [ -n "${GITHUB_REF_NAME:-}" ]; then
+    LS_VER=$(echo "$GITHUB_REF_NAME" | sed 's/^[bv]//')
+else
+    LS_VER=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+        "https://api.github.com/repos/${LS_BINARY_REPO}/releases/latest" \
+        | jq -r .tag_name | sed 's/^[bv]//')
+fi
 
 if [[ -z "$LS_VER" || "$LS_VER" == "null" ]]; then
     log_info "Error: could not resolve latest llama-swap release tag from ${LS_BINARY_REPO}"
