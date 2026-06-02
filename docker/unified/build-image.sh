@@ -207,6 +207,8 @@ BUILD_ARGS=(
     --build-arg "SD_COMMIT_HASH=${SD_HASH}"
     --build-arg "IK_LLAMA_COMMIT_HASH=${IK_LLAMA_HASH}"
     --build-arg "LS_VERSION=${LS_HASH}"
+    --build-arg "GIT_HASH=${LS_HASH}"
+    --build-arg "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     --build-arg "MESA_COMMIT_HASH=${MESA_REF:-main}"
     --build-arg "INTEL_GPU_SUITE=${INTEL_GPU_SUITE:-noble}"
     -t "${DOCKER_IMAGE_TAG}"

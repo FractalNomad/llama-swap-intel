@@ -1,67 +1,32 @@
 #!/bin/bash
-# Install llama-swap - download latest release binary from GitHub
-# Usage: ./install-llama-swap.sh [version]
-#   version: release version number (e.g., "170") or "latest" (default)
+# Build llama-swap from source
+# Usage: ./build-llama-swap.sh [git_ref]
+#   git_ref: git branch, tag, or commit hash (default: "main")
 set -e
 
-VERSION="${1:-latest}"
-REPO="mostlygeek/llama-swap"
+GIT_REF="${1:-main}"
+REPO="https://github.com/mostlygeek/llama-swap.git"
 
 mkdir -p /install/bin
 
-# If a full commit hash is given, find the release tag that points to it
-if echo "${VERSION}" | grep -qE '^[0-9a-f]{40}$'; then
-    echo "=== Resolving commit ${VERSION:0:7} to release tag ==="
-    TAG=$(git ls-remote --tags "https://github.com/${REPO}.git" 2>/dev/null \
-        | grep "^${VERSION}" | sed 's|.*refs/tags/||' | grep -v '\^{}' | head -1)
-    if [ -n "${TAG}" ]; then
-        echo "Resolved to tag: ${TAG}"
-        VERSION="${TAG#b}"
-    else
-        echo "No release tag found for commit ${VERSION:0:7}, using latest"
-        VERSION="latest"
-    fi
+echo "=== Building llama-swap from source (ref: ${GIT_REF}) ==="
+
+# Clone llama-swap source
+LLAMA_SWAP_DIR=/src/llama-swap
+if [ ! -d "${LLAMA_SWAP_DIR}" ]; then
+    git clone --depth 1 --branch "${GIT_REF}" "${REPO}" "${LLAMA_SWAP_DIR}"
 fi
 
-# Strip leading 'b' or 'v' prefix so both "198", "b198", and "v198" work
-VERSION="${VERSION#b}"
-VERSION="${VERSION#v}"
+cd "${LLAMA_SWAP_DIR}"
 
-# Resolve "latest" to actual version number
-if [ "$VERSION" = "latest" ]; then
-    echo "=== Resolving latest llama-swap release ==="
-    VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-        | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^b//')
-    if [ -z "$VERSION" ]; then
-        echo "FATAL: Could not determine latest release version" >&2
-        exit 1
-    fi
-    echo "Latest version: ${VERSION}"
-fi
+# Get version info
+GIT_HASH=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-
-ARCH=$(uname -m)
-case "$ARCH" in
-    x86_64) ARCH="amd64" ;;
-    aarch64|arm64) ARCH="arm64" ;;
-    *) echo "FATAL: Unsupported architecture: $ARCH" >&2; exit 1 ;;
-esac
-
-# Download and extract — try b prefix first, fall back to v for old releases
-URL="https://github.com/${REPO}/releases/download/b${VERSION}/llama-swap_${VERSION}_linux_${ARCH}.tar.gz"
-echo "=== Downloading llama-swap v${VERSION} ==="
-echo "URL: $URL"
-
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -fSL "$URL" 2>/dev/null || echo "000")
-if [ "$HTTP_CODE" = "000" ] || [ "$HTTP_CODE" = "404" ]; then
-    echo "b release not found, falling back to v prefix"
-    URL="https://github.com/${REPO}/releases/download/v${VERSION}/llama-swap_${VERSION}_linux_${ARCH}.tar.gz"
-    echo "URL: $URL"
-fi
-
-curl -fSL -o /tmp/llama-swap.tar.gz "$URL"
-tar -xzf /tmp/llama-swap.tar.gz -C /install/bin/
-rm /tmp/llama-swap.tar.gz
+# Build llama-swap
+CGO_ENABLED=0 go build \
+    -ldflags="-X main.commit=${GIT_HASH} -X main.version=${GIT_HASH} -X main.date=${BUILD_DATE}" \
+    -o /install/bin/llama-swap
 
 # Validate
 if [ ! -x "/install/bin/llama-swap" ]; then
@@ -70,7 +35,7 @@ if [ ! -x "/install/bin/llama-swap" ]; then
     exit 1
 fi
 
-echo "$VERSION" > /install/llama-swap-version
+echo "$GIT_HASH" > /install/llama-swap-version
 
-echo "=== llama-swap v${VERSION} installed ==="
+echo "=== llama-swap ${GIT_HASH:0:7} built ==="
 ls -la /install/bin/llama-swap

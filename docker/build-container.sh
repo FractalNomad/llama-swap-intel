@@ -5,7 +5,7 @@ set -euo pipefail
 cd $(dirname "$0")
 
 # use this to test locally, example:
-# GITHUB_TOKEN=$(gh auth token) LOG_DEBUG=1 DEBUG_ABORT_BUILD=1 ./docker/build-container.sh rocm
+# LOG_DEBUG=1 DEBUG_ABORT_BUILD=1 ./docker/build-container.sh vulkan
 # you need read:package scope on the token. Generate a personal access token with
 # the scopes: gist, read:org, repo, write:packages
 # then: gh auth login (and copy/paste the new token)
@@ -41,42 +41,18 @@ if [[ -z "${GITHUB_TOKEN:-}" ]]; then
   exit 1
 fi
 
-# Set llama.cpp base image, customizable using the BASE_LLAMACPP_IMAGE environment
-# variable, this permits testing with forked llama.cpp repositories
-BASE_IMAGE=${BASE_LLAMACPP_IMAGE:-ghcr.io/ggml-org/llama.cpp}
-SD_IMAGE=${BASE_SDCPP_IMAGE:-ghcr.io/leejet/stable-diffusion.cpp}
-
 # LS_REPO is the destination of the built container image — defaults to the
 # current GitHub repository so forked CI builds publish to the fork's own
 # ghcr.io namespace without code changes. Lowercase for Docker/OCI compliance.
 LS_REPO=$(echo "${GITHUB_REPOSITORY:-mostlygeek/llama-swap}" | tr '[:upper:]' '[:lower:]')
 
-# LS_BINARY_REPO is where the llama-swap release tarball is downloaded
-# from. Decoupled from LS_REPO so forks (which usually have no releases of
-# their own) can still build a container by pulling the canonical binary
-# from upstream. Override via the LS_BINARY_REPO env var when you maintain
-# fork-side releases.
-LS_BINARY_REPO=${LS_BINARY_REPO:-FractalNomad/llama-swap-intel}
+# Git hash and build date for embedding in the binary
+GIT_HASH=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-# the most recent llama-swap tag
-# have to strip out the 'b' due to .tar.gz file naming.
-# Prefer the current git tag (set by the release workflow), falling back to
-# the latest GitHub release so local runs still work.
-# Authenticated request — unauth'd github.com API is 60/hr per IP and GHA
-# runners share IPs, so the call regularly returns rate-limit JSON and
-# `.tag_name` then resolves to "null", producing a bogus `bnull` URL below.
-if [ -n "${GITHUB_REF_NAME:-}" ]; then
-    LS_VER=$(echo "$GITHUB_REF_NAME" | sed 's/^[bv]//')
-else
-    LS_VER=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-        "https://api.github.com/repos/${LS_BINARY_REPO}/releases/latest" \
-        | jq -r .tag_name | sed 's/^[bv]//')
-fi
-
-if [[ -z "$LS_VER" || "$LS_VER" == "null" ]]; then
-    log_info "Error: could not resolve latest llama-swap release tag from ${LS_BINARY_REPO}"
-    exit 1
-fi
+# Set llama.cpp base image, customizable using the BASE_LLAMACPP_IMAGE environment
+# variable, this permits testing with forked llama.cpp repositories
+BASE_IMAGE=${BASE_LLAMACPP_IMAGE:-ghcr.io/ggml-org/llama.cpp}
 
 # Fetches the most recent llama.cpp tag matching the given prefix
 # Handles pagination to search beyond the first 100 results
@@ -127,11 +103,7 @@ fetch_llama_tag() {
     done
 }
 
-if [ "$ARCH" == "cpu" ]; then
-    LCPP_TAG=$(fetch_llama_tag "server")
-    BASE_TAG=server-${LCPP_TAG}
-elif [ "$ARCH" == "sycl" ]; then
-    # sycl has no pre-built image; we build it from source
+if [ "$ARCH" == "sycl" ]; then
     BASE_TAG=sycl
     LCPP_TAG="local"
 else
@@ -139,10 +111,8 @@ else
     BASE_TAG=server-${ARCH}-${LCPP_TAG}
 fi
 
-SD_TAG=master-${ARCH}
-
-# Abort if LCPP_TAG is empty.
-if [[ -z "$LCPP_TAG" ]]; then
+# Abort if LCPP_TAG is empty (for non-sycl builds).
+if [[ "$ARCH" != "sycl" && -z "$LCPP_TAG" ]]; then
     log_info "Abort: Could not find llama-server container for arch: $ARCH"
     exit 1
 else
@@ -154,28 +124,10 @@ if [[ ! -z "$DEBUG_ABORT_BUILD" ]]; then
     exit 0
 fi
 
-# cpu is the only backend with a multi-arch upstream base
-# (ghcr.io/ggml-org/llama.cpp:server-bXXXX ships amd64+arm64); GPU backends
-# are amd64-only and stay on the original `docker build` path so the
-# sd-server layer can still FROM the just-built image via the local
-# dockerd image store (buildx's container driver has a separate store
-# that doesn't share with dockerd, which breaks the sd build).
-if [ "$ARCH" == "cpu" ]; then
-    if [ "$PUSH_IMAGES" == "true" ]; then
-        BUILDX_FLAGS="--push --platform linux/amd64,linux/arm64"
-    else
-        # Smoke build: validate both platforms but emit no output. buildx
-        # on the docker-container driver defaults to cacheonly when
-        # neither --push nor --load is given, so each arch fully builds
-        # and a regression in either fails CI — without materializing the
-        # image or needing to --load (which is multi-arch-incompatible).
-        BUILDX_FLAGS="--platform linux/amd64,linux/arm64"
-    fi
-fi
-
 for CONTAINER_TYPE in non-root root; do
-  CONTAINER_TAG="ghcr.io/${LS_REPO}:b${LS_VER}-${ARCH}-${LCPP_TAG}"
+  CONTAINER_TAG="ghcr.io/${LS_REPO}:${ARCH}-${LCPP_TAG}"
   CONTAINER_LATEST="ghcr.io/${LS_REPO}:${ARCH}"
+
   USER_UID=0
   USER_GID=0
   USER_HOME=/root
@@ -188,51 +140,37 @@ for CONTAINER_TYPE in non-root root; do
     USER_HOME=/app
   fi
 
-  log_info "Building $CONTAINER_TYPE $CONTAINER_TAG $LS_VER"
-  if [ "$ARCH" == "sycl" ]; then
-    # sycl: build llama.cpp from source first, then layer llama-swap on top
-    docker build --provenance=false -f llama.cpp-sycl.Dockerfile \
-      --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
-      --build-arg APP_VERSION=${LS_VER} --build-arg APP_REVISION=$(git rev-parse HEAD 2>/dev/null || echo "unknown") \
-      --build-arg LLAMA_CPP_REF=${LLAMA_CPP_REF:-master} \
-      -t ${CONTAINER_TAG}-llama-cpp .
+  log_info "Building $CONTAINER_TYPE $CONTAINER_TAG"
 
-    docker build --provenance=false \
-      --build-arg BASE_TAG=${BASE_TAG} --build-arg LS_VER=${LS_VER} --build-arg UID=${USER_UID} \
-      --build-arg LS_REPO=${LS_BINARY_REPO} --build-arg GID=${USER_GID} --build-arg USER_HOME=${USER_HOME} \
-      -f llama-swap.Containerfile \
-      --build-arg BASE_IMAGE=ghcr.io/${LS_REPO} \
+  if [ "$ARCH" == "sycl" ]; then
+    # sycl: build everything from source in a single Dockerfile
+    docker build --provenance=false -f llama.cpp-sycl.Dockerfile \
+      --build-arg BUILD_DATE=${BUILD_DATE} \
+      --build-arg APP_VERSION=${GIT_HASH:0:8} \
+      --build-arg APP_REVISION=${GIT_HASH} \
+      --build-arg LLAMA_CPP_REF=${LLAMA_CPP_REF:-master} \
+      --build-arg UID=${USER_UID} \
+      --build-arg GID=${USER_GID} \
+      --build-arg USER_HOME=${USER_HOME} \
+      --build-arg GIT_HASH=${GIT_HASH} \
+      --build-arg BUILD_DATE_ARG=${BUILD_DATE} \
       -t ${CONTAINER_TAG} -t ${CONTAINER_LATEST} \
-      --build-arg BASE_TAG=${CONTAINER_TAG}-llama-cpp .
-  elif [ "$ARCH" == "cpu" ]; then
-    docker buildx build $BUILDX_FLAGS --provenance=false \
-      -f llama-swap.Containerfile \
-      --build-arg BASE_TAG=${BASE_TAG} --build-arg LS_VER=${LS_VER} --build-arg UID=${USER_UID} \
-      --build-arg LS_REPO=${LS_BINARY_REPO} --build-arg GID=${USER_GID} --build-arg USER_HOME=${USER_HOME} \
-      --build-arg BASE_IMAGE=${BASE_IMAGE} \
-      -t ${CONTAINER_TAG} -t ${CONTAINER_LATEST} .
+      --context .. .
   else
+    # vulkan: use pre-built llama.cpp image, build llama-swap from source
     docker build --provenance=false -f llama-swap.Containerfile \
-      --build-arg BASE_TAG=${BASE_TAG} --build-arg LS_VER=${LS_VER} --build-arg UID=${USER_UID} \
-      --build-arg LS_REPO=${LS_BINARY_REPO} --build-arg GID=${USER_GID} --build-arg USER_HOME=${USER_HOME} \
+      --build-arg BASE_IMAGE=${BASE_IMAGE} \
+      --build-arg BASE_TAG=${BASE_TAG} \
+      --build-arg UID=${USER_UID} \
+      --build-arg GID=${USER_GID} \
+      --build-arg USER_HOME=${USER_HOME} \
+      --build-arg GIT_HASH=${GIT_HASH} \
+      --build-arg BUILD_DATE=${BUILD_DATE} \
       -t ${CONTAINER_TAG} -t ${CONTAINER_LATEST} \
-      --build-arg BASE_IMAGE=${BASE_IMAGE} .
+      --context .. .
   fi
 
-  # For architectures with stable-diffusion.cpp support, layer sd-server on top.
-  # Stays on `docker build` so the base resolves from local dockerd.
-  case "$ARCH" in
-    "vulkan")
-      log_info "Adding sd-server to $CONTAINER_TAG"
-      docker build --provenance=false -f llama-swap-sd.Containerfile \
-        --build-arg BASE=${CONTAINER_TAG} \
-        --build-arg SD_IMAGE=${SD_IMAGE} --build-arg SD_TAG=${SD_TAG} \
-        --build-arg UID=${USER_UID} --build-arg GID=${USER_GID} \
-        -t ${CONTAINER_TAG} -t ${CONTAINER_LATEST} . ;;
-  esac
-
-  # cpu builds push inline via buildx --push; all other archs push here.
-  if [ "$ARCH" != "cpu" ] && [ "$PUSH_IMAGES" == "true" ]; then
+  if [ "$PUSH_IMAGES" == "true" ]; then
     docker push ${CONTAINER_TAG}
     docker push ${CONTAINER_LATEST}
   fi

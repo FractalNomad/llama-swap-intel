@@ -1,6 +1,6 @@
 #!/bin/sh
 # This script installs llama-swap on Linux.
-# It detects the current operating system architecture and installs the appropriate version of llama-swap.
+# It builds llama-swap from source using Go.
 
 set -eu
 
@@ -34,7 +34,7 @@ if [ "$(id -u)" -ne 0 ]; then
     SUDO="sudo"
 fi
 
-NEEDS=$(require tee tar python3 mktemp)
+NEEDS=$(require git go mktemp)
 if [ -n "$NEEDS" ]; then
     status "ERROR: The following tools are required but missing:"
     for NEED in $NEEDS; do
@@ -45,13 +45,6 @@ fi
 
 [ "$(uname -s)" = "Linux" ] || error 'This script is intended to run on Linux only.'
 
-ARCH=$(uname -m)
-case "$ARCH" in
-    x86_64) ARCH="amd64" ;;
-    aarch64|arm64) ARCH="arm64" ;;
-    *) error "Unsupported architecture: $ARCH" ;;
-esac
-
 IS_WSL2=false
 
 KERN=$(uname -r)
@@ -61,45 +54,31 @@ case "$KERN" in
     *) ;;
 esac
 
-download_binary() {
-    ASSET_NAME="linux_$ARCH"
-
+build_binary() {
     TMPDIR=$(mktemp -d)
     trap 'rm -rf "${TMPDIR}"' EXIT INT TERM HUP
-    PYTHON_SCRIPT=$(cat <<EOF
-import os
-import json
-import sys
-import urllib.request
 
-ASSET_NAME = "${ASSET_NAME}"
+    status "Cloning llama-swap source..."
+    git clone --depth 1 https://github.com/mostlygeek/llama-swap.git "${TMPDIR}/llama-swap"
+    cd "${TMPDIR}/llama-swap"
 
-with urllib.request.urlopen("https://api.github.com/repos/mostlygeek/llama-swap/releases/latest") as resp:
-    data = json.load(resp)
-    for asset in data.get("assets", []):
-        if ASSET_NAME in asset.get("name", ""):
-            url = asset["browser_download_url"]
-            break
-    else:
-        print("ERROR: Matching asset not found.", file=sys.stderr)
-        exit(1)
+    GIT_HASH=$(git rev-parse --short HEAD)
+    BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-print("Downloading:", url, file=sys.stderr)
-output_path = os.path.join("${TMPDIR}", "llama-swap.tar.gz")
-urllib.request.urlretrieve(url, output_path)
-print(output_path)
-EOF
-)
+    status "Building llama-swap..."
+    CGO_ENABLED=0 go build \
+        -ldflags="-X main.commit=${GIT_HASH} -X main.version=${GIT_HASH} -X main.date=${BUILD_DATE}" \
+        -o "${TMPDIR}/llama-swap"
 
-    TARFILE=$(python3 -c "$PYTHON_SCRIPT")
-    if [ ! -f "$TARFILE" ]; then
-        error "Failed to download binary."
+    if [ ! -x "${TMPDIR}/llama-swap" ]; then
+        error "Build failed — binary not found."
     fi
 
-    status "Extracting to /usr/local/bin"
-    $SUDO tar -xzf "$TARFILE" -C /usr/local/bin llama-swap
+    status "Installing to /usr/local/bin"
+    $SUDO cp "${TMPDIR}/llama-swap" /usr/local/bin/llama-swap
+    $SUDO chmod +x /usr/local/bin/llama-swap
 }
-download_binary
+build_binary
 
 configure_systemd() {
     if ! id llama-swap >/dev/null 2>&1; then

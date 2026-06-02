@@ -167,12 +167,19 @@ RUN --mount=type=cache,id=ccache-cuda,target=/ccache \
 ARG BACKEND=cuda
 FROM ik-llama-${BACKEND} AS ik-llama-build
 
-# ── Download llama-swap release binary ────────────────────────────────
+# ── Build llama-swap from source ──────────────────────────────────────
 
-FROM builder-base AS llama-swap-download
-ARG LS_VERSION=latest
-COPY install-llama-swap.sh /build/
-RUN bash /build/install-llama-swap.sh "${LS_VERSION}"
+FROM golang:1.24-bookworm AS llama-swap-build
+ARG LS_VERSION=main
+ARG GIT_HASH=unknown
+ARG BUILD_DATE=unknown
+WORKDIR /src
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch "${LS_VERSION}" https://github.com/mostlygeek/llama-swap.git .
+RUN CGO_ENABLED=0 go build \
+    -ldflags="-X main.commit=${GIT_HASH} -X main.version=${LS_VERSION} -X main.date=${BUILD_DATE}" \
+    -o /install/bin/llama-swap
+RUN mkdir -p /install && echo "${LS_VERSION}" > /install/llama-swap-version
 
 # ── Runtime bases ─────────────────────────────────────────────────────
 
@@ -303,8 +310,8 @@ COPY --from=ik-llama-build /install/bin/ /usr/local/bin/
 RUN pip install uv --break-system-packages
 
 # Copy llama-swap binary
-COPY --from=llama-swap-download /install/bin/llama-swap /usr/local/bin/
-COPY --from=llama-swap-download /install/llama-swap-version /tmp/
+COPY --from=llama-swap-build /install/bin/llama-swap /usr/local/bin/
+COPY --from=llama-swap-build /install/llama-swap-version /tmp/
 
 RUN ldconfig
 

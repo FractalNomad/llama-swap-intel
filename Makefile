@@ -69,20 +69,6 @@ simple-responder:
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-# Create a new release tag
-release:
-	@echo "Checking for unstaged changes..."
-	@if [ -n "$(shell git status --porcelain)" ]; then \
-		echo "Error: There are unstaged changes. Please commit or stash your changes before creating a release tag." >&2; \
-		exit 1; \
-	fi
-
-# Get the highest tag in b{number} format, increment it, and create a new tag
-	@highest_tag=$$(git tag --sort=-v:refname | grep -E '^b[0-9]+$$' | head -n 1 || echo "b0"); \
-	new_tag="b$$(( $${highest_tag#b} + 1 ))"; \
-	echo "tagging new version: $$new_tag"; \
-	git tag "$$new_tag";
-
 GOOS ?= $(shell go env GOOS 2>/dev/null || echo linux)
 GOARCH ?= $(shell go env GOARCH 2>/dev/null || echo amd64)
 wol-proxy: $(BUILD_DIR)

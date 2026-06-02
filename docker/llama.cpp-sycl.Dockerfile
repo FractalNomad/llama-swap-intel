@@ -35,6 +35,18 @@ RUN . /opt/intel/oneapi/setvars.sh && \
         -DLLAMA_OPENSSL=ON && \
     cmake --build build --config Release -j$(nproc)
 
+# Build llama-swap from source
+FROM golang:1.24-bookworm AS ls-build
+ARG GIT_HASH=unknown
+ARG BUILD_DATE=unknown
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags="-X main.commit=${GIT_HASH} -X main.version=${GIT_HASH} -X main.date=${BUILD_DATE}" \
+    -o /out/llama-swap
+
 # Create runtime image
 FROM ubuntu:$UBUNTU_VERSION
 
@@ -59,7 +71,12 @@ COPY --from=build /app/llama.cpp/*.py /app/
 COPY --from=build /app/llama.cpp/conversion /app/
 COPY --from=build /app/llama.cpp/gguf-py /app/
 
+# Copy llama-swap binary
+COPY --from=ls-build /out/llama-swap /app/bin/llama-swap
+
 ENV PATH="/app/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/opt/intel/oneapi:/opt/intel/oneapi/compiler/latest/linux/lib:/opt/intel/oneapi/mkl/latest/lib:/opt/intel/oneapi/tbb/latest/lib:/opt/intel/oneapi/mpi/latest/lib"
 
-ENTRYPOINT ["/app/bin/llama-server"]
+COPY config.example.yaml /app/config.yaml
+
+ENTRYPOINT ["/app/bin/llama-swap", "-config", "/app/config.yaml"]
